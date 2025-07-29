@@ -13,6 +13,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
+from logging.handlers import RotatingFileHandler
 
 
 class ErrorCategory(Enum):
@@ -475,19 +476,32 @@ class ErrorLogger:
 
     def __init__(self, logger_name: str = "kleinanzeigen_api"):
         self.logger = logging.getLogger(logger_name)
-        self._setup_logger()
+        self._setup_logger(logger_name)
 
-    def _setup_logger(self) -> None:
+    def _setup_logger(self, logger_name: str) -> None:
         """Setup logger with appropriate formatting and handlers."""
-        if not self.logger.handlers:
+        logger = logging.getLogger(
+            logger_name.split(".")[0]
+        )  # Get the root logger of the application
+        if not logger.handlers:
             # Create console handler with structured formatting
-            handler = logging.StreamHandler()
             formatter = logging.Formatter(
                 "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
             )
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
+
+            # Console Handler
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+
+            # File Handler
+            file_handler = RotatingFileHandler(
+                "app.log", maxBytes=10485760, backupCount=5
+            )  # 10MB per file, 5 backups
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+
+            logger.setLevel(logging.INFO)
 
     def log_error(
         self, error: StructuredError, include_stack_trace: bool = True
@@ -556,7 +570,7 @@ class ErrorLogger:
             f"{len(errors)} errors in {duration:.2f}s"
         )
 
-        if failed_items == 0 and len(errors) == 0:
+        if failed_items == 0 and not errors:
             self.logger.info(summary_message)
         elif success_rate >= 80:
             self.logger.warning(summary_message)

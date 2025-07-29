@@ -1,5 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from utils.rate_limiter import limiter
+from utils.middleware import log_requests
 from routers import (
     inserate_ultra as inserate,
     inserat,
@@ -30,6 +34,7 @@ async def lifespan(app: FastAPI):
     # Store browser manager in app state for access by routers
     app.state.browser_manager = browser_manager
     app.state.uvloop_enabled = uvloop_enabled
+    app.state.limiter = limiter
 
     yield
 
@@ -39,14 +44,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(version="1.0.0", lifespan=lifespan)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.middleware("http")(log_requests)
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     return {
         "message": "Welcome to the Kleinanzeigen API",
         "endpoints": ["/inserate", "/inserat/{id}", "/inserate-detailed"],
         "status": "operational",
+        "rate_limit": "10/minute",
     }
 
 

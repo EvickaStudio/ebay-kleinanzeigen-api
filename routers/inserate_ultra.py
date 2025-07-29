@@ -4,11 +4,13 @@ Ultra-optimized router for maximum performance scraping.
 
 from fastapi import APIRouter, Query, Request, HTTPException
 from scrapers.inserate_ultra_optimized import ultra_optimized_scrape_inserate
+from utils.rate_limiter import limiter
 
 router = APIRouter()
 
 
 @router.get("/inserate")
+@limiter.limit("10/minute")
 async def get_inserate_ultra_optimized(
     request: Request,
     query: str = Query(None, description="Search query string"),

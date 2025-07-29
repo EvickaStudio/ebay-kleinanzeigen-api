@@ -9,11 +9,13 @@ from fastapi import APIRouter, Query, HTTPException, Request
 
 from scrapers.inserate_ultra_optimized import ultra_optimized_scrape_inserate
 from scrapers.inserat import get_inserate_details_optimized
+from utils.rate_limiter import limiter
 
 router = APIRouter()
 
 
 @router.get("/inserate-detailed")
+@limiter.limit("10/minute")
 async def get_inserate_with_details(
     request: Request,
     query: str = Query(None, description="Search query string"),

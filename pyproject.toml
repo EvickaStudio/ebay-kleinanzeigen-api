@@ -12,6 +12,7 @@ dependencies = [
     "playwright>=1.49.0",
     "pytest>=8.4.1",
     "python-multipart>=0.0.20",
+    "slowapi>=0.1.9",
     "uvicorn>=0.34.0",
     "uvloop>=0.21.0",
 ]

@@ -1,10 +1,12 @@
 from scrapers.inserat import get_inserate_details_optimized
 from fastapi import APIRouter, HTTPException, Request
+from utils.rate_limiter import limiter
 
 router = APIRouter()
 
 
 @router.get("/inserat/{id}")
+@limiter.limit("10/minute")
 async def get_inserat(request: Request, id: str):
     """
     Fetch detailed information for a specific listing.
