@@ -6,6 +6,7 @@ the best possible performance for multi-page scraping operations.
 """
 
 import asyncio
+import contextlib
 import time
 import random
 import gc
@@ -80,18 +81,15 @@ class UltraOptimizedScraper:
 
                 # Process batch concurrently
                 batch_tasks = []
-                for item in batch:
-                    batch_tasks.append(self._extract_single_ad(item))
-
+                batch_tasks.extend(self._extract_single_ad(item) for item in batch)
                 batch_results = await asyncio.gather(
                     *batch_tasks, return_exceptions=True
                 )
 
                 # Filter successful results
-                for result in batch_results:
-                    if isinstance(result, dict):
-                        results.append(result)
-
+                results.extend(
+                    result for result in batch_results if isinstance(result, dict)
+                )
                 # Periodic memory cleanup
                 if i % (batch_size * 5) == 0:
                     gc.collect()
@@ -99,7 +97,7 @@ class UltraOptimizedScraper:
             return results
 
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
     async def _extract_single_ad(self, article) -> Dict[str, Any]:
         """Extract data from a single ad article element."""
@@ -154,9 +152,7 @@ class UltraOptimizedScraper:
         """Efficiently get text content from an element."""
         try:
             element = await parent_element.query_selector(selector)
-            if element:
-                return await element.inner_text()
-            return ""
+            return await element.inner_text() if element else ""
         except Exception:
             return ""
 
@@ -194,14 +190,10 @@ class UltraOptimizedScraper:
                     await page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
                     # Wait for essential content only
-                    try:
+                    with contextlib.suppress(Exception):
                         await page.wait_for_selector(
                             ".ad-listitem", timeout=5000, state="visible"
                         )
-                    except Exception:
-                        # Continue even if selector not found - might be empty page
-                        pass
-
                     # Extract ads with optimized method
                     results = await self.extract_ads_optimized(page)
 
@@ -376,7 +368,7 @@ class UltraOptimizedScraper:
             task_metrics = self.task_manager.get_metrics()
 
             # Calculate success statistics
-            successful_pages = sum(1 for m in all_metrics if m.success)
+            successful_pages = sum(bool(m.success) for m in all_metrics)
             success_rate = (
                 (successful_pages / page_count) * 100 if page_count > 0 else 0
             )

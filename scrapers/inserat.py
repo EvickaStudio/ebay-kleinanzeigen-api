@@ -73,7 +73,7 @@ async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
             "price": price,
             "delivery": shipping,
             "location": location,
-            "views": views if views else "0",
+            "views": views or "0",
             "description": description,
             "images": images,
             "details": details,
@@ -86,10 +86,10 @@ async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
         raise HTTPException(
             status_code=e.response.status_code,
             detail=f"Could not fetch ad details from source: {e.response.reason_phrase}",
-        )
+        ) from e
     except Exception as e:
         print(f"[ERROR] {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 async def get_inserate_details_optimized(listing_id: str, retry_count: int = 2) -> dict:
@@ -147,8 +147,7 @@ async def get_inserate_details_optimized(listing_id: str, retry_count: int = 2) 
                         "performance_metrics": request_metrics.to_dict(),
                     }
 
-                    warnings = warning_manager.get_warnings()
-                    if warnings:
+                    if warnings := warning_manager.get_warnings():
                         response["warnings"] = (
                             warning_manager.get_user_friendly_messages()
                         )
@@ -208,8 +207,7 @@ async def get_inserate_details_optimized(listing_id: str, retry_count: int = 2) 
                         "performance_metrics": request_metrics.to_dict(),
                     }
 
-                    warnings = warning_manager.get_warnings()
-                    if warnings:
+                    if warnings := warning_manager.get_warnings():
                         response["warnings"] = (
                             warning_manager.get_user_friendly_messages()
                         )

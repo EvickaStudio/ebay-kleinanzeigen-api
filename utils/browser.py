@@ -121,8 +121,7 @@ class OptimizedPlaywrightManager:
                 self._max_concurrent_reached, self._concurrent_operations
             )
             try:
-                result = await coro
-                return result
+                return await coro
             finally:
                 self._concurrent_operations -= 1
 

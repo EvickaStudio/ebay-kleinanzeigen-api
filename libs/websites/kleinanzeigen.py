@@ -39,28 +39,27 @@ def parse_price(price_text: Optional[str]) -> Dict[str, Union[str, bool]]:
 def get_seller_details(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
     result = {"name": None, "since": None, "type": "private", "badges": []}
     try:
-        name_selector = ".userprofile-vip"
-        result["name"] = get_element_content(soup, name_selector)
-
-        seller_type_element = soup.select_one(".userprofile-vip-details-text")
-        if seller_type_element:
-            seller_type_text = seller_type_element.get_text(strip=True)
-            if "Gewerblicher" in seller_type_text:
-                result["type"] = "business"
-
-        since_selector = ".userprofile-vip-details-text:has-text('Aktiv seit')"
-        seller_since = get_element_content(soup, since_selector)
-        if seller_since:
-            result["since"] = seller_since.replace("Aktiv seit ", "").strip()
-
-        badges_selector = ".userprofile-vip-badges .userbadge-tag"
-        badges = get_elements_content(soup, badges_selector)
-        result["badges"] = [
-            badge.strip() for badge in badges if badge and badge.strip()
-        ]
+        _get_seller_details_(soup, result)
     except Exception as e:
         print(f"Error getting seller details: {str(e)}")
     return result
+
+
+def _get_seller_details_(soup, result):
+    result["name"] = get_element_content(soup, ".userprofile-vip")
+
+    if seller_type_element := soup.select_one(".userprofile-vip-details-text"):
+        seller_type_text = seller_type_element.get_text(strip=True)
+        if "Gewerblicher" in seller_type_text:
+            result["type"] = "business"
+
+    since_selector = ".userprofile-vip-details-text:has-text('Aktiv seit')"
+    if seller_since := get_element_content(soup, since_selector):
+        result["since"] = seller_since.replace("Aktiv seit ", "").strip()
+
+    badges_selector = ".userprofile-vip-badges .userbadge-tag"
+    badges = get_elements_content(soup, badges_selector)
+    result["badges"] = [badge.strip() for badge in badges if badge and badge.strip()]
 
 
 def get_details(soup: BeautifulSoup) -> Dict[str, str]:
@@ -84,8 +83,7 @@ def get_features(soup: BeautifulSoup) -> List[str]:
     try:
         feature_elements = soup.select("#viewad-configuration .checktaglist .checktag")
         for feature in feature_elements:
-            feature_text = feature.get_text(strip=True)
-            if feature_text:
+            if feature_text := feature.get_text(strip=True):
                 features.append(feature_text)
     except Exception as e:
         print(f"Error getting features: {str(e)}")
@@ -107,12 +105,12 @@ def get_location(soup: BeautifulSoup) -> Dict[str, str]:
 def get_extra_info(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
     result: Dict[str, Optional[str]] = {"created_at": None, "views": "0"}
     try:
-        date_element = soup.select_one("#viewad-extra-info > div:nth-child(1) > span")
-        if date_element:
+        if date_element := soup.select_one(
+            "#viewad-extra-info > div:nth-child(1) > span"
+        ):
             result["created_at"] = date_element.get_text(strip=True)
 
-        views_element = soup.select_one("#viewad-cntr-num")
-        if views_element:
+        if views_element := soup.select_one("#viewad-cntr-num"):
             result["views"] = views_element.get_text(strip=True)
     except Exception as e:
         print(f"Error getting extra info: {str(e)}")

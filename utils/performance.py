@@ -125,7 +125,7 @@ class PerformanceTracker:
             raise ValueError("Request tracking not started")
 
         total_time = time.time() - self.start_time
-        pages_successful = sum(1 for pm in self.page_metrics if pm.success)
+        pages_successful = sum(bool(pm.success) for pm in self.page_metrics)
         pages_failed = len(self.page_metrics) - pages_successful
 
         return RequestMetrics(

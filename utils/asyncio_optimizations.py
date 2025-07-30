@@ -137,7 +137,7 @@ class HighPerformanceTaskManager:
             return {"total_tasks": 0}
 
         durations = [t.duration for t in completed_tasks]
-        success_count = sum(1 for t in completed_tasks if t.success)
+        success_count = sum(bool(t.success) for t in completed_tasks)
 
         return {
             "total_tasks": len(completed_tasks),

@@ -118,7 +118,7 @@ class StructuredError:
             "severity": self.severity.value,
             "context": self.context.to_dict(),
             "recovery_suggestions": self.recovery_suggestions,
-            "stack_trace": self.stack_trace if self.stack_trace else None,
+            "stack_trace": self.stack_trace or None,
         }
 
     def is_recoverable(self) -> bool:
@@ -578,7 +578,7 @@ class ErrorLogger:
             self.logger.error(summary_message)
 
         # Log error breakdown if there were significant failures
-        if len(errors) > 0:
+        if errors:
             error_categories = {}
             for error in errors:
                 category = error.category.value
