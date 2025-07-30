@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import HTTPException
 from libs.websites import kleinanzeigen as lib
 import re
@@ -12,79 +13,107 @@ from utils.error_handling import (
 )
 
 
+async def get_status(page):
+    """Extract the status of the ad concurrently."""
+    status = "active"
+    title_element = await page.query_selector("#viewad-title")
+    if title_element:
+        title_text, title_classes = await asyncio.gather(
+            title_element.inner_text(), title_element.get_attribute("class")
+        )
+        if "Verkauft" in title_text:
+            status = "sold"
+        elif "Reserviert •" in title_text:
+            status = "reserved"
+        elif "Gelöscht •" in title_text:
+            status = "deleted"
+        if title_classes and "is-sold" in title_classes:
+            status = "sold"
+    if await page.query_selector(".badge-sold"):
+        status = "sold"
+    return status
+
+
+async def get_details_if_present(page):
+    if await page.query_selector("#viewad-details"):
+        return await lib.get_details(page)
+    return {}
+
+
+async def get_features_if_present(page):
+    if await page.query_selector("#viewad-configuration"):
+        return await lib.get_features(page)
+    return []
+
+
 async def get_inserate_details(url: str, page):
     try:
-        await page.goto(url, timeout=120000)
-
+        await page.goto(url, timeout=60000, wait_until="domcontentloaded")
         try:
             await page.wait_for_selector(
-                "#viewad-cntr-num", state="visible", timeout=2500
+                "#viewad-cntr-num", state="visible", timeout=5000
             )
-        except Exception as e:
-            print(f"[WARNING] Views element did not appear within 5 seconds: {e}")
+        except Exception:
+            # This is not a critical failure, the page might still be usable
+            print(f"[WARNING] Views element did not appear for {url}")
 
-        ad_id = await lib.get_element_content(
-            page,
-            "#viewad-ad-id-box > ul > li:nth-child(2)",
-            default="[ERROR] Ad ID not found",
-        )
-        categories = [
-            cat.strip()
-            for cat in await lib.get_elements_content(page, ".breadcrump-link")
-            if cat.strip()
-        ]
-        title = await lib.get_element_content(
-            page, "#viewad-title", default="[ERROR] Title not found"
-        )
+        # --- Parallel Data Extraction ---
+        tasks = {
+            "ad_id": asyncio.create_task(
+                lib.get_element_content(
+                    page,
+                    "#viewad-ad-id-box > ul > li:nth-child(2)",
+                    default="[ERROR] Ad ID not found",
+                )
+            ),
+            "categories": asyncio.create_task(
+                lib.get_elements_content(page, ".breadcrump-link")
+            ),
+            "title": asyncio.create_task(
+                lib.get_element_content(
+                    page, "#viewad-title", default="[ERROR] Title not found"
+                )
+            ),
+            "status": asyncio.create_task(get_status(page)),
+            "price_element": asyncio.create_task(
+                lib.get_element_content(page, "#viewad-price")
+            ),
+            "views": asyncio.create_task(lib.get_element_content(page, "#viewad-cntr-num")),
+            "description": asyncio.create_task(
+                lib.get_element_content(page, "#viewad-description-text")
+            ),
+            "images": asyncio.create_task(lib.get_image_sources(page, "#viewad-image")),
+            "seller_details": asyncio.create_task(lib.get_seller_details(page)),
+            "details": asyncio.create_task(get_details_if_present(page)),
+            "features": asyncio.create_task(get_features_if_present(page)),
+            "shipping_text": asyncio.create_task(
+                lib.get_element_content(page, ".boxedarticle--details--shipping")
+            ),
+            "location": asyncio.create_task(lib.get_location(page)),
+            "extra_info": asyncio.create_task(lib.get_extra_info(page)),
+        }
 
-        # Extract status from title element
-        status = "active"  # Default status
-        title_element = await page.query_selector("#viewad-title")
-        if title_element:
-            title_text = await title_element.inner_text()
+        results = await asyncio.gather(*tasks.values())
+        results_dict = dict(zip(tasks.keys(), results))
+        # --- End of Parallel Data Extraction ---
 
-            # Check for specific status indicators in the title text
-            if "Verkauft" in title_text:
-                status = "sold"
-            elif "Reserviert •" in title_text:
-                status = "reserved"
-            elif "Gelöscht •" in title_text:
-                status = "deleted"
-
-            # Additional check for sold class
-            title_classes = await title_element.get_attribute("class")
-            if title_classes and "is-sold" in title_classes:
-                status = "sold"
-
-        # Final check for sold status in the page content
-        sold_badge = await page.query_selector(".badge-sold")
-        if sold_badge:
-            status = "sold"
-
-        price_element = await lib.get_element_content(page, "#viewad-price")
-        price = lib.parse_price(price_element)
-        views = await lib.get_element_content(page, "#viewad-cntr-num")
-        description = await lib.get_element_content(page, "#viewad-description-text")
+        # Process results
+        ad_id = results_dict["ad_id"]
+        categories = [cat.strip() for cat in results_dict["categories"] if cat.strip()]
+        title = results_dict["title"]
+        status = results_dict["status"]
+        price = lib.parse_price(results_dict["price_element"])
+        views = results_dict["views"]
+        description = results_dict["description"]
         if description:
             description = re.sub(r"[ \t]+", " ", description).strip()
             description = re.sub(r"\n+", "\n", description)
 
-        images = await lib.get_image_sources(page, "#viewad-image")
-        seller_details = await lib.get_seller_details(page)
-        details = (
-            await lib.get_details(page)
-            if await page.query_selector("#viewad-details")
-            else {}
-        )
-        features = (
-            await lib.get_features(page)
-            if await page.query_selector("#viewad-configuration")
-            else {}
-        )
-
-        shipping_text = await lib.get_element_content(
-            page, ".boxedarticle--details--shipping"
-        )
+        images = results_dict["images"]
+        seller_details = results_dict["seller_details"]
+        details = results_dict["details"]
+        features = results_dict["features"]
+        shipping_text = results_dict["shipping_text"]
         shipping = None
         if shipping_text:
             if "Nur Abholung" in shipping_text:
@@ -92,15 +121,13 @@ async def get_inserate_details(url: str, page):
             elif "Versand" in shipping_text:
                 shipping = "shipping"
 
-        location = await lib.get_location(page)
-        extra_info = await lib.get_extra_info(page)
+        location = results_dict["location"]
+        extra_info = results_dict["extra_info"]
 
         return {
             "id": ad_id,
             "categories": categories,
-            "title": title.split(" • ")[-1].strip()
-            if " • " in title
-            else title.strip(),
+            "title": title.split(" • ")[-1].strip() if " • " in title else title.strip(),
             "status": status,
             "price": price,
             "delivery": shipping,

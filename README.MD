@@ -143,13 +143,28 @@ GET /inserat/12345
 
 Same as `/inserate` endpoint, plus:
 
-- **`max_concurrent_details`** *(integer, optional)*: Maximum concurrent detail fetches (default: 5, max: 10).
+- **`max_concurrent_details`** *(integer, optional)*: Maximum concurrent detail fetches (default: 10, max: 20).
 
 ##### Example Request
 
 ```http
-GET /inserate-detailed?query=laptop&page_count=2&max_concurrent_details=5
+GET /inserate-detailed?query=laptop&page_count=2&max_concurrent_details=10
 ```
+
+### Production Deployment
+
+#### Running with Multiple Workers
+
+For production environments, it is recommended to run the API with multiple worker processes to fully utilize CPU cores and handle more concurrent requests.
+
+You can specify the number of workers using the `--workers` flag with `uvicorn`. A good starting point is `(2 * number_of_cpu_cores) + 1`.
+
+```sh
+# Example: Start with 4 workers
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+**Note:** When running with multiple workers, each worker will have its own `OptimizedPlaywrightManager` instance. Ensure your server has enough RAM to accommodate multiple browser instances.
 
 ### Documentation
 

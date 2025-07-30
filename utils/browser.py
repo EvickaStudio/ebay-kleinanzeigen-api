@@ -1,7 +1,24 @@
 import asyncio
+import re
 from typing import List
-from playwright.async_api import async_playwright, BrowserContext, Page
+from playwright.async_api import async_playwright, BrowserContext, Page, Route
 from utils.user_agent import get_random_ua
+
+# Pre-compiled regex for resource blocking
+BLOCKED_RESOURCES_RE = re.compile(r"\.(css|jpg|jpeg|png|gif|svg|woff|ttf|eot)$")
+ALLOWED_SCRIPT_RE = re.compile(r"kleinanzeigen\.de|googletagmanager\.com")
+
+
+async def block_unnecessary_requests(route: Route):
+    """Block non-essential resources to speed up page loads."""
+    if BLOCKED_RESOURCES_RE.search(route.request.url):
+        await route.abort()
+    elif route.request.resource_type == "script" and not ALLOWED_SCRIPT_RE.search(
+        route.request.url
+    ):
+        await route.abort()
+    else:
+        await route.continue_()
 
 
 class PlaywrightManager:
@@ -43,6 +60,13 @@ class OptimizedPlaywrightManager:
         self._concurrent_operations = 0
         self._max_concurrent_reached = 0
 
+    async def _create_new_context(self) -> BrowserContext:
+        """Creates a new, optimized browser context."""
+        context = await self._browser.new_context(user_agent=get_random_ua())
+        await context.route("**/*", block_unnecessary_requests)
+        self._contexts_created += 1
+        return context
+
     async def start(self):
         """Initialize the browser and create initial context pool"""
         self._playwright = await async_playwright().start()
@@ -51,9 +75,8 @@ class OptimizedPlaywrightManager:
         # Pre-create some contexts for the pool
         initial_contexts = min(3, self._max_contexts)
         for _ in range(initial_contexts):
-            context = await self._browser.new_context(user_agent=get_random_ua())
+            context = await self._create_new_context()
             self._context_pool.append(context)
-            self._contexts_created += 1
 
     async def get_context(self) -> BrowserContext:
         """Get a browser context from the pool or create a new one"""
@@ -66,9 +89,8 @@ class OptimizedPlaywrightManager:
 
             # Create new context if pool is empty and under limit
             if len(self._context_in_use) < self._max_contexts:
-                context = await self._browser.new_context(user_agent=get_random_ua())
+                context = await self._create_new_context()
                 self._context_in_use.append(context)
-                self._contexts_created += 1
                 return context
 
             # If we're at the limit, wait and try again

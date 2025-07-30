@@ -23,9 +23,9 @@ async def get_inserate_with_details(
     radius: int = Query(None, description="Search radius in kilometers"),
     min_price: int = Query(None, description="Minimum price filter"),
     max_price: int = Query(None, description="Maximum price filter"),
-    page_count: int = Query(1, ge=1, le=3, description="Number of pages to fetch"),
+    page_count: int = Query(1, ge=1, le=5, description="Number of pages to fetch"),
     max_concurrent_details: int = Query(
-        5, ge=1, le=10, description="Maximum concurrent detail fetches"
+        10, ge=1, le=20, description="Maximum concurrent detail fetches"
     ),
 ):
     """
