@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.get("/inserate-detailed")
-@limiter.limit("10/minute")
+@limiter.limit("20/minute")
 async def get_inserate_with_details(
     request: Request,
     query: str = Query(None, description="Search query string"),
@@ -25,7 +25,7 @@ async def get_inserate_with_details(
     max_price: int = Query(None, description="Maximum price filter"),
     page_count: int = Query(1, ge=1, le=5, description="Number of pages to fetch"),
     max_concurrent_details: int = Query(
-        10, ge=1, le=20, description="Maximum concurrent detail fetches"
+        20, ge=1, le=50, description="Maximum concurrent detail fetches"
     ),
 ):
     """
@@ -42,7 +42,7 @@ async def get_inserate_with_details(
     try:
         start_time = time.time()
 
-        # Phase 1: Get listings using ultra-optimized scraper
+        # Phase 1: Get listings using ultra-optimized scraper (still needs browser)
         listings_result = await ultra_optimized_scrape_inserate(
             browser_manager=browser_manager,
             query=query,
@@ -70,50 +70,39 @@ async def get_inserate_with_details(
                 },
             }
 
-        # Phase 2: Fetch details concurrently with controlled concurrency
-        async def fetch_single_detail(listing: Dict[str, Any], index: int):
-            """Fetch details for a single listing."""
+        # Phase 2: Fetch details concurrently with httpx
+        async def fetch_single_detail(listing: Dict[str, Any]):
+            """Fetch details for a single listing using httpx."""
             try:
                 listing_id = listing.get("adid")
                 if not listing_id:
                     return None
 
-                detail_result = await get_inserate_details_optimized(
-                    browser_manager, listing_id
-                )
+                # No browser_manager needed here anymore
+                detail_result = await get_inserate_details_optimized(listing_id)
 
                 if detail_result.get("success", False):
-                    # Combine listing and detail data
                     combined_data = {
-                        **listing,  # Basic listing info
+                        **listing,
                         "details": detail_result.get("data", {}),
                         "detail_fetch_time": detail_result.get("time_taken", 0),
                     }
                     return combined_data
-
                 return None
-
             except Exception:
                 return None
 
-        # Control concurrency to prevent resource exhaustion
         semaphore = asyncio.Semaphore(max_concurrent_details)
 
-        async def fetch_with_semaphore(listing, index):
+        async def fetch_with_semaphore(listing):
             async with semaphore:
-                return await fetch_single_detail(listing, index)
+                return await fetch_single_detail(listing)
 
-        # Execute detail fetching concurrently
-        detail_tasks = [
-            fetch_with_semaphore(listing, i) for i, listing in enumerate(listings)
-        ]
-
+        detail_tasks = [fetch_with_semaphore(listing) for listing in listings]
         detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
 
-        # Process results
         combined_data = []
         successful_details = 0
-
         for result in detail_results:
             if isinstance(result, dict) and result is not None:
                 combined_data.append(result)
@@ -121,7 +110,6 @@ async def get_inserate_with_details(
 
         total_time = time.time() - start_time
 
-        # Clean response with minimal metrics
         response = {
             "success": True,
             "data": combined_data,
@@ -144,5 +132,6 @@ async def get_inserate_with_details(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        print(f"Error in get_inserate_with_details: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

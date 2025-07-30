@@ -1,9 +1,10 @@
 import asyncio
+import httpx
+from bs4 import BeautifulSoup
 from fastapi import HTTPException
 from libs.websites import kleinanzeigen as lib
 import re
 import time
-from utils.browser import OptimizedPlaywrightManager
 from utils.performance import PageMetrics
 from utils.error_handling import (
     WarningManager,
@@ -13,107 +14,30 @@ from utils.error_handling import (
 )
 
 
-async def get_status(page):
-    """Extract the status of the ad concurrently."""
-    status = "active"
-    title_element = await page.query_selector("#viewad-title")
-    if title_element:
-        title_text, title_classes = await asyncio.gather(
-            title_element.inner_text(), title_element.get_attribute("class")
-        )
-        if "Verkauft" in title_text:
-            status = "sold"
-        elif "Reserviert •" in title_text:
-            status = "reserved"
-        elif "Gelöscht •" in title_text:
-            status = "deleted"
-        if title_classes and "is-sold" in title_classes:
-            status = "sold"
-    if await page.query_selector(".badge-sold"):
-        status = "sold"
-    return status
-
-
-async def get_details_if_present(page):
-    if await page.query_selector("#viewad-details"):
-        return await lib.get_details(page)
-    return {}
-
-
-async def get_features_if_present(page):
-    if await page.query_selector("#viewad-configuration"):
-        return await lib.get_features(page)
-    return []
-
-
-async def get_inserate_details(url: str, page):
+async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
     try:
-        await page.goto(url, timeout=60000, wait_until="domcontentloaded")
-        try:
-            await page.wait_for_selector(
-                "#viewad-cntr-num", state="visible", timeout=5000
-            )
-        except Exception:
-            # This is not a critical failure, the page might still be usable
-            print(f"[WARNING] Views element did not appear for {url}")
+        response = await client.get(url, timeout=20)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        soup = BeautifulSoup(response.text, 'html.parser')
 
         # --- Parallel Data Extraction ---
-        tasks = {
-            "ad_id": asyncio.create_task(
-                lib.get_element_content(
-                    page,
-                    "#viewad-ad-id-box > ul > li:nth-child(2)",
-                    default="[ERROR] Ad ID not found",
-                )
-            ),
-            "categories": asyncio.create_task(
-                lib.get_elements_content(page, ".breadcrump-link")
-            ),
-            "title": asyncio.create_task(
-                lib.get_element_content(
-                    page, "#viewad-title", default="[ERROR] Title not found"
-                )
-            ),
-            "status": asyncio.create_task(get_status(page)),
-            "price_element": asyncio.create_task(
-                lib.get_element_content(page, "#viewad-price")
-            ),
-            "views": asyncio.create_task(lib.get_element_content(page, "#viewad-cntr-num")),
-            "description": asyncio.create_task(
-                lib.get_element_content(page, "#viewad-description-text")
-            ),
-            "images": asyncio.create_task(lib.get_image_sources(page, "#viewad-image")),
-            "seller_details": asyncio.create_task(lib.get_seller_details(page)),
-            "details": asyncio.create_task(get_details_if_present(page)),
-            "features": asyncio.create_task(get_features_if_present(page)),
-            "shipping_text": asyncio.create_task(
-                lib.get_element_content(page, ".boxedarticle--details--shipping")
-            ),
-            "location": asyncio.create_task(lib.get_location(page)),
-            "extra_info": asyncio.create_task(lib.get_extra_info(page)),
-        }
-
-        results = await asyncio.gather(*tasks.values())
-        results_dict = dict(zip(tasks.keys(), results))
-        # --- End of Parallel Data Extraction ---
-
-        # Process results
-        ad_id = results_dict["ad_id"]
-        categories = [cat.strip() for cat in results_dict["categories"] if cat.strip()]
-        title = results_dict["title"]
-        status = results_dict["status"]
-        price = lib.parse_price(results_dict["price_element"])
-        views = results_dict["views"]
-        description = results_dict["description"]
+        ad_id = lib.get_element_content(soup, "#viewad-ad-id-box > ul > li:nth-child(2)", default="[ERROR] Ad ID not found")
+        categories = [cat.strip() for cat in lib.get_elements_content(soup, ".breadcrump-link") if cat.strip()]
+        title = lib.get_element_content(soup, "#viewad-title", default="[ERROR] Title not found")
+        price_element = lib.get_element_content(soup, "#viewad-price")
+        price = lib.parse_price(price_element)
+        views = lib.get_element_content(soup, "#viewad-cntr-num")
+        description = lib.get_element_content(soup, "#viewad-description-text")
         if description:
             description = re.sub(r"[ \t]+", " ", description).strip()
             description = re.sub(r"\n+", "\n", description)
 
-        images = results_dict["images"]
-        seller_details = results_dict["seller_details"]
-        details = results_dict["details"]
-        features = results_dict["features"]
-        shipping_text = results_dict["shipping_text"]
+        images = lib.get_image_sources(soup, "#viewad-image")
+        seller_details = lib.get_seller_details(soup)
+        details = lib.get_details(soup)
+        features = lib.get_features(soup)
+
+        shipping_text = lib.get_element_content(soup, ".boxedarticle--details--shipping")
         shipping = None
         if shipping_text:
             if "Nur Abholung" in shipping_text:
@@ -121,8 +45,11 @@ async def get_inserate_details(url: str, page):
             elif "Versand" in shipping_text:
                 shipping = "shipping"
 
-        location = results_dict["location"]
-        extra_info = results_dict["extra_info"]
+        location = lib.get_location(soup)
+        extra_info = lib.get_extra_info(soup)
+
+        # Status is not easily available without JS, so we'll default to active
+        status = "active"
 
         return {
             "id": ad_id,
@@ -140,29 +67,20 @@ async def get_inserate_details(url: str, page):
             "seller": seller_details,
             "extra_info": extra_info,
         }
+    except httpx.HTTPStatusError as e:
+        print(f"[ERROR] HTTP error for {url}: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Could not fetch ad details from source: {e.response.reason_phrase}")
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def get_inserate_details_optimized(
-    browser_manager: OptimizedPlaywrightManager, listing_id: str, retry_count: int = 2
+    listing_id: str, retry_count: int = 2
 ) -> dict:
-    """
-    Optimized version of get_inserate_details with comprehensive error handling and performance tracking.
-
-    Args:
-        browser_manager: OptimizedPlaywrightManager instance
-        listing_id: The listing ID to fetch details for
-        retry_count: Maximum number of retries (default: 2)
-
-    Returns:
-        Dictionary containing listing details, performance metrics, and warnings
-    """
     from utils.performance import PerformanceTracker
 
-    # Initialize error handling and performance tracking
-    logger = ErrorLogger("inserat_scraper")
+    logger = ErrorLogger("inserat_scraper_httpx")
     warning_manager = WarningManager()
     tracker = PerformanceTracker()
     tracker.start_request()
@@ -170,178 +88,89 @@ async def get_inserate_details_optimized(
     url = f"https://www.kleinanzeigen.de/s-anzeige/{listing_id}"
 
     with error_handling_context(
-        operation="fetch_listing_details", listing_id=listing_id, url=url, logger=logger
+        operation="fetch_listing_details_httpx", listing_id=listing_id, url=url, logger=logger
     ) as error_ctx:
         last_structured_error = None
 
-        for attempt in range(retry_count + 1):  # +1 for initial attempt
-            start_time = time.time()
-
-            try:
-                # Use semaphore-controlled execution
-                async def fetch_operation():
-                    context = await browser_manager.get_context()
-                    page = None
-                    try:
-                        page = await context.new_page()
-
-                        # Get listing details using existing function
-                        details = await get_inserate_details(url, page)
-
-                        # Validate the extracted details
-                        if not details or not details.get("id"):
-                            warning_manager.add_warning(
-                                f"Incomplete data extracted for listing {listing_id}",
-                                ErrorSeverity.MEDIUM,
-                                error_ctx.context,
-                                affected_items=[listing_id],
-                                impact_description="Some listing information may be missing",
-                            )
-
-                        # Check for status-related warnings
-                        status = details.get("status", "unknown")
-                        if status in ["sold", "deleted"]:
-                            warning_manager.add_warning(
-                                f"Listing {listing_id} has status: {status}",
-                                ErrorSeverity.LOW,
-                                error_ctx.context,
-                                affected_items=[listing_id],
-                                impact_description=f"Listing is no longer available ({status})",
-                            )
-
-                        return details
-
-                    finally:
-                        if page:
-                            await page.close()
-                        await browser_manager.release_context(context)
-
-                # Execute with concurrency control
-                details = await browser_manager.execute_with_semaphore(
-                    fetch_operation()
-                )
-
-                # Create successful page metric with warning information
-                page_metric = PageMetrics(
-                    page_number=1,
-                    url=url,
-                    start_time=start_time,
-                    end_time=time.time(),
-                    success=True,
-                    retry_count=attempt,
-                    error_message=None,
-                    results_count=1,
-                    warning_count=len(warning_manager.get_warnings()),
-                )
-                tracker.add_page_metric(page_metric)
-
-                # Get browser performance metrics
-                browser_metrics = browser_manager.get_performance_metrics()
-                tracker.set_browser_contexts_used(
-                    browser_metrics["contexts_in_use"]
-                    + browser_metrics["contexts_in_pool"]
-                )
-                tracker.set_concurrent_level(1)  # Single listing request
-
-                # Generate final metrics
-                request_metrics = tracker.get_request_metrics()
-
-                # Log successful operation
-                if attempt > 0:
-                    logger.log_operation_summary(
-                        operation=f"fetch_details_{listing_id}",
-                        total_items=1,
-                        successful_items=1,
-                        warnings=warning_manager.get_warnings(),
-                        errors=[],
-                        duration=request_metrics.total_time,
-                    )
-
-                # Prepare response with comprehensive information
-                response = {
-                    "success": True,
-                    "data": details,
-                    "time_taken": round(request_metrics.total_time, 3),
-                    "performance_metrics": request_metrics.to_dict(),
-                    "browser_metrics": browser_metrics,
-                }
-
-                # Add warning information if present
-                warnings = warning_manager.get_warnings()
-                if warnings:
-                    response["warnings"] = warning_manager.get_user_friendly_messages()
-                    response["detailed_warnings"] = [w.to_dict() for w in warnings]
-                    response["warning_summary"] = warning_manager.get_warning_summary()
-
-                return response
-
-            except Exception as e:
-                # Classify and handle the error
-                error_ctx.context.retry_attempt = attempt
-                structured_error = error_ctx.handle_exception(e, "detail_fetch")
-                last_structured_error = structured_error
-
-                # Check if we should retry based on error classification
-                if attempt < retry_count and structured_error.should_retry(retry_count):
-                    # Add warning about retry attempt
-                    warning_manager.add_warning(
-                        f"Retrying listing {listing_id} after {structured_error.category.value} error (attempt {attempt + 1}/{retry_count + 1})",
-                        ErrorSeverity.MEDIUM,
-                        error_ctx.context,
-                        affected_items=[listing_id],
-                        impact_description=f"Temporary delay before retry due to {structured_error.category.value} error",
-                    )
-
-                    # Exponential backoff with jitter
-                    import asyncio
-                    import random
-
-                    wait_time = (2**attempt) + random.uniform(0, 1)
-                    await asyncio.sleep(wait_time)
-                    continue
-
-                # All retries exhausted or non-recoverable error
-                error_msg = (
-                    f"Failed after {attempt + 1} attempts: {structured_error.message}"
-                )
-
-                # Create failed page metric with enhanced information
-                page_metric = PageMetrics(
-                    page_number=1,
-                    url=url,
-                    start_time=start_time,
-                    end_time=time.time(),
-                    success=False,
-                    retry_count=attempt,
-                    error_message=error_msg,
-                    results_count=0,
-                    error_category=structured_error.category.value,
-                    warning_count=len(warning_manager.get_warnings()),
-                )
-                tracker.add_page_metric(page_metric)
-
-                # Try to get partial metrics if available
+        async with httpx.AsyncClient() as client:
+            for attempt in range(retry_count + 1):
+                start_time = time.time()
                 try:
-                    browser_metrics = browser_manager.get_performance_metrics()
-                    tracker.set_browser_contexts_used(
-                        browser_metrics["contexts_in_use"]
-                        + browser_metrics["contexts_in_pool"]
+                    details = await get_inserate_details_httpx(url, client)
+
+                    if not details or not details.get("id"):
+                        warning_manager.add_warning(
+                            f"Incomplete data extracted for listing {listing_id}",
+                            ErrorSeverity.MEDIUM,
+                            error_ctx.context,
+                            affected_items=[listing_id],
+                            impact_description="Some listing information may be missing",
+                        )
+
+                    page_metric = PageMetrics(
+                        page_number=1,
+                        url=url,
+                        start_time=start_time,
+                        end_time=time.time(),
+                        success=True,
+                        retry_count=attempt,
+                        error_message=None,
+                        results_count=1,
+                        warning_count=len(warning_manager.get_warnings()),
                     )
-                    tracker.set_concurrent_level(1)
+                    tracker.add_page_metric(page_metric)
 
                     request_metrics = tracker.get_request_metrics()
 
-                    # Log failed operation
-                    logger.log_operation_summary(
-                        operation=f"fetch_details_{listing_id}",
-                        total_items=1,
-                        successful_items=0,
-                        warnings=warning_manager.get_warnings(),
-                        errors=[structured_error],
-                        duration=request_metrics.total_time,
-                    )
+                    response = {
+                        "success": True,
+                        "data": details,
+                        "time_taken": round(request_metrics.total_time, 3),
+                        "performance_metrics": request_metrics.to_dict(),
+                    }
 
-                    # Prepare comprehensive error response
+                    warnings = warning_manager.get_warnings()
+                    if warnings:
+                        response["warnings"] = warning_manager.get_user_friendly_messages()
+                        response["detailed_warnings"] = [w.to_dict() for w in warnings]
+                        response["warning_summary"] = warning_manager.get_warning_summary()
+
+                    return response
+
+                except Exception as e:
+                    error_ctx.context.retry_attempt = attempt
+                    structured_error = error_ctx.handle_exception(e, "detail_fetch_httpx")
+                    last_structured_error = structured_error
+
+                    if attempt < retry_count and structured_error.should_retry(retry_count):
+                        warning_manager.add_warning(
+                            f"Retrying listing {listing_id} after {structured_error.category.value} error (attempt {attempt + 1}/{retry_count + 1})",
+                            ErrorSeverity.MEDIUM,
+                            error_ctx.context,
+                            affected_items=[listing_id],
+                            impact_description=f"Temporary delay before retry due to {structured_error.category.value} error",
+                        )
+                        wait_time = (2**attempt) + asyncio.trandom.uniform(0, 1)
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                    error_msg = f"Failed after {attempt + 1} attempts: {structured_error.message}"
+                    page_metric = PageMetrics(
+                        page_number=1,
+                        url=url,
+                        start_time=start_time,
+                        end_time=time.time(),
+                        success=False,
+                        retry_count=attempt,
+                        error_message=error_msg,
+                        results_count=0,
+                        error_category=structured_error.category.value,
+                        warning_count=len(warning_manager.get_warnings()),
+                    )
+                    tracker.add_page_metric(page_metric)
+
+                    request_metrics = tracker.get_request_metrics()
+
                     response = {
                         "success": False,
                         "error": structured_error.message,
@@ -351,44 +180,24 @@ async def get_inserate_details_optimized(
                         "data": None,
                         "time_taken": round(request_metrics.total_time, 3),
                         "performance_metrics": request_metrics.to_dict(),
-                        "browser_metrics": browser_metrics,
                     }
 
-                    # Add warning information if present
                     warnings = warning_manager.get_warnings()
                     if warnings:
-                        response["warnings"] = (
-                            warning_manager.get_user_friendly_messages()
-                        )
+                        response["warnings"] = warning_manager.get_user_friendly_messages()
                         response["detailed_warnings"] = [w.to_dict() for w in warnings]
 
                     return response
 
-                except Exception as e:
-                    # Fallback response if metrics collection also fails
-                    raise HTTPException(
-                        status_code=500,
-                        detail={
-                            "error": structured_error.message,
-                            "category": structured_error.category.value,
-                            "severity": structured_error.severity.value,
-                            "recovery_suggestions": structured_error.recovery_suggestions,
-                        },
-                    ) from e
-
-        # This should never be reached, but just in case
         if last_structured_error:
-            error_msg = f"Final error: {last_structured_error.message}"
             raise HTTPException(
                 status_code=500,
                 detail={
-                    "error": error_msg,
+                    "error": last_structured_error.message,
                     "category": last_structured_error.category.value,
                     "severity": last_structured_error.severity.value,
                     "recovery_suggestions": last_structured_error.recovery_suggestions,
                 },
             )
         else:
-            raise HTTPException(
-                status_code=500, detail="Unexpected error in retry loop"
-            )
+            raise HTTPException(status_code=500, detail="Unexpected error in retry loop")

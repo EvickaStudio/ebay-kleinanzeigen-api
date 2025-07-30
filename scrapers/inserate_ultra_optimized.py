@@ -412,7 +412,7 @@ class UltraOptimizedScraper:
             # Prepare ultra-comprehensive response
             response = {
                 "success": True,
-                "results": all_results,
+                "data": all_results,
                 "unique_results": len(all_results),
                 "time_taken": round(request_metrics.total_time, 3),
                 "performance_metrics": {

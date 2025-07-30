@@ -6,7 +6,7 @@ router = APIRouter()
 
 
 @router.get("/inserat/{id}")
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def get_inserat(request: Request, id: str):
     """
     Fetch detailed information for a specific listing.
@@ -17,12 +17,9 @@ async def get_inserat(request: Request, id: str):
     if not id or not id.strip():
         raise HTTPException(status_code=400, detail="Invalid listing ID")
 
-    browser_manager = request.app.state.browser_manager
-    if not browser_manager:
-        raise HTTPException(status_code=503, detail="Service unavailable")
-
     try:
-        response = await get_inserate_details_optimized(browser_manager, id)
+        # The browser_manager is no longer needed for this endpoint
+        response = await get_inserate_details_optimized(id)
 
         if not response.get("success", False):
             raise HTTPException(
@@ -48,5 +45,7 @@ async def get_inserat(request: Request, id: str):
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        # Log the exception for debugging
+        print(f"Error in get_inserat: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

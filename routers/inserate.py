@@ -61,6 +61,8 @@ async def get_inserate_ultra_optimized(
             }
             result["performance_metrics"] = essential_metrics
 
+        # The scraper now returns the 'data' key directly
+        print(f"Returning result: {result}")
         return result
 
     except HTTPException:
