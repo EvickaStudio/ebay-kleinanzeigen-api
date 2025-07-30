@@ -43,10 +43,7 @@ async def check_api_availability(base_url: str) -> bool:
             async with session.get(
                 f"{base_url}/", timeout=aiohttp.ClientTimeout(total=10)
             ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data.get("browser_status") == "optimized"
-                return False
+                return response.status == 200
     except Exception as e:
         print(f"❌ API not available at {base_url}: {str(e)}")
         return False
