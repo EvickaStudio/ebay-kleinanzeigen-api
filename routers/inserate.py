@@ -1,170 +1,69 @@
-from fastapi import APIRouter, Query, HTTPException, Request
-from scrapers.inserate import get_inserate_klaz_optimized
-from utils.error_handling import ErrorLogger, error_handling_context, ErrorSeverity
+"""
+Ultra-optimized router for maximum performance scraping.
+"""
+
+from fastapi import APIRouter, Query, Request, HTTPException
+from scrapers.inserate_ultra_optimized import ultra_optimized_scrape_inserate
+from utils.rate_limiter import limiter
 
 router = APIRouter()
 
 
 @router.get("/inserate")
-async def get_inserate(
+@limiter.limit("10/minute")
+async def get_inserate_ultra_optimized(
     request: Request,
-    query: str = Query(None),
-    location: str = Query(None),
-    radius: int = Query(None),
-    min_price: int = Query(None),
-    max_price: int = Query(None),
-    page_count: int = Query(1, ge=1, le=20),
+    query: str = Query(None, description="Search query string"),
+    location: str = Query(None, description="Location filter"),
+    radius: int = Query(None, description="Search radius in kilometers"),
+    min_price: int = Query(None, description="Minimum price filter"),
+    max_price: int = Query(None, description="Maximum price filter"),
+    page_count: int = Query(1, ge=1, le=20, description="Number of pages to fetch"),
 ):
     """
-    Enhanced inserate endpoint with comprehensive error handling and warnings.
+    Fetch listings based on search criteria.
 
-    This endpoint fetches listings with improved error categorization, detailed
-    warnings for partial failures, and comprehensive logging for debugging.
+    Retrieves listings from Kleinanzeigen with support for various filters
+    including location, price range, and search terms. Results are returned
+    with performance metrics and success indicators.
     """
-    logger = ErrorLogger("inserate_router")
+    browser_manager = request.app.state.browser_manager
+    if not browser_manager:
+        raise HTTPException(status_code=503, detail="Service unavailable")
 
-    with error_handling_context(
-        operation="inserate_api_request", logger=logger
-    ) as error_ctx:
-        # Use shared browser manager from app state
-        browser_manager = request.app.state.browser_manager
+    try:
+        # Execute ultra-optimized scraping
+        result = await ultra_optimized_scrape_inserate(
+            browser_manager=browser_manager,
+            query=query,
+            location=location,
+            radius=radius,
+            min_price=min_price,
+            max_price=max_price,
+            page_count=page_count,
+        )
 
-        try:
-            # Validate input parameters
-            if page_count > 20:
-                error_ctx.add_warning(
-                    f"Page count {page_count} exceeds recommended maximum of 20",
-                    ErrorSeverity.MEDIUM,
-                    impact_description="High page counts may result in slower response times",
-                )
+        # Clean up response - remove excessive metrics for production
+        if "task_metrics" in result:
+            del result["task_metrics"]
+        if "optimization_features" in result:
+            del result["optimization_features"]
 
-            # Use optimized scraper function
-            response = await get_inserate_klaz_optimized(
-                browser_manager,
-                query,
-                location,
-                radius,
-                min_price,
-                max_price,
-                page_count,
-            )
-
-            # Handle scraper errors
-            if not response.get("success", False):
-                error_message = response.get("error", "Unknown scraper error")
-                error_category = response.get("error_category", "unknown")
-                error_severity = response.get("error_severity", "medium")
-                recovery_suggestions = response.get("recovery_suggestions", [])
-
-                # Log the error for debugging
-                logger.logger.error(
-                    f"Scraper failed: {error_message} (Category: {error_category})"
-                )
-
-                # Return structured error response
-                raise HTTPException(
-                    status_code=500,
-                    detail={
-                        "error": error_message,
-                        "category": error_category,
-                        "severity": error_severity,
-                        "recovery_suggestions": recovery_suggestions,
-                        "performance_metrics": response.get("performance_metrics", {}),
-                        "warnings": response.get("warnings", []),
-                    },
-                )
-
-            # Remove duplicates based on 'adid' while maintaining backward compatibility
-            seen_adids = set()
-            unique_results = []
-            duplicate_count = 0
-
-            for result in response["results"]:
-                if result["adid"] not in seen_adids:
-                    unique_results.append(result)
-                    seen_adids.add(result["adid"])
-                else:
-                    duplicate_count += 1
-
-            # Add warning if significant duplicates were found
-            if duplicate_count > 0:
-                error_ctx.add_warning(
-                    f"Removed {duplicate_count} duplicate listings",
-                    ErrorSeverity.LOW,
-                    impact_description=f"Duplicate removal reduced results from {len(response['results'])} to {len(unique_results)}",
-                )
-
-            # Prepare enhanced response with comprehensive error handling information
-            enhanced_response = {
-                "success": response["success"],
-                "time_taken": response["time_taken"],
-                "unique_results": len(unique_results),
-                "data": unique_results,
-                "performance_metrics": response["performance_metrics"],
-                "browser_metrics": response.get("browser_metrics", {}),
+        # Simplify performance metrics
+        if "performance_metrics" in result:
+            metrics = result["performance_metrics"]
+            # Keep only essential metrics
+            essential_metrics = {
+                "pages_requested": metrics.get("pages_requested", 0),
+                "pages_successful": metrics.get("pages_successful", 0),
+                "success_rate": metrics.get("success_rate", 0),
+                "average_page_time": metrics.get("average_page_time", 0),
             }
+            result["performance_metrics"] = essential_metrics
 
-            # Combine warnings from scraper and router
-            all_warnings = []
-            router_warnings = error_ctx.warnings.get_user_friendly_messages()
-            scraper_warnings = response.get("warnings", [])
+        return result
 
-            if router_warnings:
-                all_warnings.extend(router_warnings)
-            if scraper_warnings:
-                all_warnings.extend(scraper_warnings)
-
-            if all_warnings:
-                enhanced_response["warnings"] = all_warnings
-
-                # Add detailed warning information if available
-                if response.get("detailed_warnings"):
-                    enhanced_response["detailed_warnings"] = response[
-                        "detailed_warnings"
-                    ]
-                if response.get("warning_summary"):
-                    enhanced_response["warning_summary"] = response["warning_summary"]
-
-                # Indicate partial success if there were warnings
-                enhanced_response["partial_success"] = response.get(
-                    "partial_success", False
-                )
-
-            # Add duplicate removal information
-            if duplicate_count > 0:
-                enhanced_response["duplicates_removed"] = duplicate_count
-                enhanced_response["original_result_count"] = len(response["results"])
-
-            # Log successful operation summary
-            logger.log_operation_summary(
-                operation="inserate_endpoint",
-                total_items=page_count,
-                successful_items=response["performance_metrics"].get(
-                    "pages_successful", 0
-                ),
-                warnings=error_ctx.warnings.get_warnings(),
-                errors=[],
-                duration=response["time_taken"],
-            )
-
-            return enhanced_response
-
-        except HTTPException:
-            # Re-raise HTTP exceptions (already handled above)
-            raise
-        except Exception as e:
-            # Handle unexpected errors
-            structured_error = error_ctx.handle_exception(e, "inserate_endpoint")
-
-            # Log the error
-            logger.log_error(structured_error)
-
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "error": structured_error.message,
-                    "category": structured_error.category.value,
-                    "severity": structured_error.severity.value,
-                    "recovery_suggestions": structured_error.recovery_suggestions,
-                },
-            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")

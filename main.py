@@ -5,9 +5,9 @@ from slowapi import _rate_limit_exceeded_handler
 from utils.rate_limiter import limiter
 from utils.middleware import log_requests
 from routers import (
-    inserate_ultra as inserate,
+    inserate,
+    inserate_detailed,
     inserat,
-    inserate_detailed_ultra as inserate_detailed,
 )
 from utils.browser import OptimizedPlaywrightManager
 from utils.asyncio_optimizations import EventLoopOptimizer
