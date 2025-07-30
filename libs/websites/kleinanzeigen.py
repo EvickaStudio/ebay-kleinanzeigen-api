@@ -1,8 +1,10 @@
 from typing import Dict, List, Optional, Union, Any
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 
 
-def get_element_content(soup: BeautifulSoup, selector: str, default: Any = None) -> Optional[str]:
+def get_element_content(
+    soup: BeautifulSoup, selector: str, default: Any = None
+) -> Optional[str]:
     element = soup.select_one(selector)
     return element.get_text(strip=True) if element else default
 
@@ -15,8 +17,8 @@ def get_elements_content(soup: BeautifulSoup, selector: str) -> List[str]:
 def get_image_sources(soup: BeautifulSoup, selector: str) -> List[str]:
     images: List[str] = []
     image_element = soup.select_one(selector)
-    if image_element and image_element.has_attr('src'):
-        images.append(image_element['src'])
+    if image_element and image_element.has_attr("src"):
+        images.append(image_element["src"])
     return images
 
 
@@ -43,7 +45,7 @@ def get_seller_details(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
         seller_type_element = soup.select_one(".userprofile-vip-details-text")
         if seller_type_element:
             seller_type_text = seller_type_element.get_text(strip=True)
-            if 'Gewerblicher' in seller_type_text:
+            if "Gewerblicher" in seller_type_text:
                 result["type"] = "business"
 
         since_selector = ".userprofile-vip-details-text:has-text('Aktiv seit')"
@@ -53,7 +55,9 @@ def get_seller_details(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
 
         badges_selector = ".userprofile-vip-badges .userbadge-tag"
         badges = get_elements_content(soup, badges_selector)
-        result["badges"] = [badge.strip() for badge in badges if badge and badge.strip()]
+        result["badges"] = [
+            badge.strip() for badge in badges if badge and badge.strip()
+        ]
     except Exception as e:
         print(f"Error getting seller details: {str(e)}")
     return result

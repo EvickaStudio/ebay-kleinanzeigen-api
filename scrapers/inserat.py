@@ -18,12 +18,22 @@ async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
     try:
         response = await client.get(url, timeout=20)
         response.raise_for_status()  # Raise an exception for bad status codes
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, "html.parser")
 
         # --- Parallel Data Extraction ---
-        ad_id = lib.get_element_content(soup, "#viewad-ad-id-box > ul > li:nth-child(2)", default="[ERROR] Ad ID not found")
-        categories = [cat.strip() for cat in lib.get_elements_content(soup, ".breadcrump-link") if cat.strip()]
-        title = lib.get_element_content(soup, "#viewad-title", default="[ERROR] Title not found")
+        ad_id = lib.get_element_content(
+            soup,
+            "#viewad-ad-id-box > ul > li:nth-child(2)",
+            default="[ERROR] Ad ID not found",
+        )
+        categories = [
+            cat.strip()
+            for cat in lib.get_elements_content(soup, ".breadcrump-link")
+            if cat.strip()
+        ]
+        title = lib.get_element_content(
+            soup, "#viewad-title", default="[ERROR] Title not found"
+        )
         price_element = lib.get_element_content(soup, "#viewad-price")
         price = lib.parse_price(price_element)
         views = lib.get_element_content(soup, "#viewad-cntr-num")
@@ -37,7 +47,9 @@ async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
         details = lib.get_details(soup)
         features = lib.get_features(soup)
 
-        shipping_text = lib.get_element_content(soup, ".boxedarticle--details--shipping")
+        shipping_text = lib.get_element_content(
+            soup, ".boxedarticle--details--shipping"
+        )
         shipping = None
         if shipping_text:
             if "Nur Abholung" in shipping_text:
@@ -54,7 +66,9 @@ async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
         return {
             "id": ad_id,
             "categories": categories,
-            "title": title.split(" • ")[-1].strip() if " • " in title else title.strip(),
+            "title": title.split(" • ")[-1].strip()
+            if " • " in title
+            else title.strip(),
             "status": status,
             "price": price,
             "delivery": shipping,
@@ -69,15 +83,16 @@ async def get_inserate_details_httpx(url: str, client: httpx.AsyncClient):
         }
     except httpx.HTTPStatusError as e:
         print(f"[ERROR] HTTP error for {url}: {e}")
-        raise HTTPException(status_code=e.response.status_code, detail=f"Could not fetch ad details from source: {e.response.reason_phrase}")
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Could not fetch ad details from source: {e.response.reason_phrase}",
+        )
     except Exception as e:
         print(f"[ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def get_inserate_details_optimized(
-    listing_id: str, retry_count: int = 2
-) -> dict:
+async def get_inserate_details_optimized(listing_id: str, retry_count: int = 2) -> dict:
     from utils.performance import PerformanceTracker
 
     logger = ErrorLogger("inserat_scraper_httpx")
@@ -88,7 +103,10 @@ async def get_inserate_details_optimized(
     url = f"https://www.kleinanzeigen.de/s-anzeige/{listing_id}"
 
     with error_handling_context(
-        operation="fetch_listing_details_httpx", listing_id=listing_id, url=url, logger=logger
+        operation="fetch_listing_details_httpx",
+        listing_id=listing_id,
+        url=url,
+        logger=logger,
     ) as error_ctx:
         last_structured_error = None
 
@@ -131,18 +149,26 @@ async def get_inserate_details_optimized(
 
                     warnings = warning_manager.get_warnings()
                     if warnings:
-                        response["warnings"] = warning_manager.get_user_friendly_messages()
+                        response["warnings"] = (
+                            warning_manager.get_user_friendly_messages()
+                        )
                         response["detailed_warnings"] = [w.to_dict() for w in warnings]
-                        response["warning_summary"] = warning_manager.get_warning_summary()
+                        response["warning_summary"] = (
+                            warning_manager.get_warning_summary()
+                        )
 
                     return response
 
                 except Exception as e:
                     error_ctx.context.retry_attempt = attempt
-                    structured_error = error_ctx.handle_exception(e, "detail_fetch_httpx")
+                    structured_error = error_ctx.handle_exception(
+                        e, "detail_fetch_httpx"
+                    )
                     last_structured_error = structured_error
 
-                    if attempt < retry_count and structured_error.should_retry(retry_count):
+                    if attempt < retry_count and structured_error.should_retry(
+                        retry_count
+                    ):
                         warning_manager.add_warning(
                             f"Retrying listing {listing_id} after {structured_error.category.value} error (attempt {attempt + 1}/{retry_count + 1})",
                             ErrorSeverity.MEDIUM,
@@ -184,7 +210,9 @@ async def get_inserate_details_optimized(
 
                     warnings = warning_manager.get_warnings()
                     if warnings:
-                        response["warnings"] = warning_manager.get_user_friendly_messages()
+                        response["warnings"] = (
+                            warning_manager.get_user_friendly_messages()
+                        )
                         response["detailed_warnings"] = [w.to_dict() for w in warnings]
 
                     return response
@@ -200,4 +228,6 @@ async def get_inserate_details_optimized(
                 },
             )
         else:
-            raise HTTPException(status_code=500, detail="Unexpected error in retry loop")
+            raise HTTPException(
+                status_code=500, detail="Unexpected error in retry loop"
+            )
