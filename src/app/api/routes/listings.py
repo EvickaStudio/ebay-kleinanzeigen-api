@@ -33,6 +33,13 @@ LISTINGS_RESPONSES = {
 @cache(expire=settings.cache_ttl_seconds)
 async def search_listings(
     scraper: ScraperDep,
+    raw_url: str | None = Query(
+        None,
+        description=(
+            "Raw URL to scrape. If provided, overrides all other parameters "
+            "except page parameters."
+        ),
+    ),
     query: str | None = Query(None, description="Search term"),
     location: str | None = Query(None, description="Location filter"),
     radius: int | None = Query(None, ge=1, le=100, description="Radius in km"),
@@ -52,6 +59,7 @@ async def search_listings(
 ) -> ApiResponse[ListingsResponse]:
     started_at = time.perf_counter()
     listings, metrics, pagination = await scraper.fetch_listings(
+        raw_url=raw_url,
         query=query,
         location=location,
         radius=radius,

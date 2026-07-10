@@ -21,6 +21,7 @@ Retrieve listing summaries with filtering, sorting, and multi-page support.
 
 | Parameter | Type | Default | Constraints | Description |
 |---|---|---|---|---|
+| `raw_url` | string | — | — | Raw URL to scrape (overrides all other filters) |
 | `query` | string | — | — | Search term |
 | `location` | string | — | — | City or location name |
 | `radius` | integer | — | 1–100 | Search radius in km |
@@ -52,6 +53,9 @@ curl "http://localhost:8000/v1/listings?query=pc&start_page=6&page_count=5"
 
 # Location-based
 curl "http://localhost:8000/v1/listings?query=fahrrad&location=Berlin&radius=20"
+
+# Using a raw URL (must be URL-encoded)
+curl "http://localhost:8000/v1/listings?raw_url=https%3A%2F%2Fwww.kleinanzeigen.de%2Fs-berlin%2Ffahrrad%2Fk0l3331"
 ```
 
 **Response**
@@ -70,6 +74,7 @@ curl "http://localhost:8000/v1/listings?query=fahrrad&location=Berlin&radius=20"
         "price": 149.0,
         "currency": "EUR",
         "negotiable": false,
+        "is_top": false,
         "description": "Guter Zustand, voll funktionsfähig..."
       }
     ],
@@ -202,7 +207,11 @@ Same as `/v1/listings`, plus:
 **Example**
 
 ```bash
+# Basic search
 curl "http://localhost:8000/v1/listings-detailed?query=laptop&page_count=2&max_concurrent_details=10"
+
+# Using a raw URL
+curl "http://localhost:8000/v1/listings-detailed?raw_url=https%3A%2F%2Fwww.kleinanzeigen.de%2Fs-berlin%2Flaptop%2Fk0l3331&page_count=2"
 ```
 
 **Response** — `data` is a list of `{ "summary": {...}, "detail": {...} }` objects:
@@ -220,6 +229,7 @@ curl "http://localhost:8000/v1/listings-detailed?query=laptop&page_count=2&max_c
         "price": 149.0,
         "currency": "EUR",
         "negotiable": false,
+        "is_top": true,
         "description": "..."
       },
       "detail": {
@@ -439,6 +449,7 @@ else:
 
 ## Tips
 
+- Use `raw_url` when you want to perform a search with specific categories or filters not directly exposed by the API (e.g., "Nur Abholung"). Simply configure your search in a web browser and copy-paste the resulting URL into the `raw_url` parameter.
 - Use `start_page` with consistent `page_count` to paginate through large result sets without overlap.
 - Check `pagination.duplicates_removed` — a non-zero value means the same listing appeared on multiple pages (common near the end of results).
 - Use `pagination.total_available_results` to estimate how many pages exist: `ceil(total / 25)`.

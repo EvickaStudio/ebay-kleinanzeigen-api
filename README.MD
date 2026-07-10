@@ -88,6 +88,7 @@ The API will be available at `http://localhost:8000`
 
 ##### Query Parameters
 
+- **`raw_url`** *(string, optional)*: Raw URL to scrape. If provided, overrides all other parameters except page parameters. Must be url-encoded.
 - **`query`** *(string, optional)*: The search term (e.g., `"fahrrad"`).
 - **`location`** *(string, optional)*: Location or city name (e.g., `"Berlin"`).
 - **`radius`** *(integer, optional)*: Search radius in km (1–100).

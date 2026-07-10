@@ -49,6 +49,7 @@ class ListingSummary(BaseModel):
     price: float | None = Field(default=None, ge=0)
     currency: str | None = None
     negotiable: bool = Field(default=False)
+    is_top: bool = Field(default=False)
     description_snippet: str | None = Field(default=None, alias="description")
 
     model_config = {

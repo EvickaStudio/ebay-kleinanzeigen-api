@@ -33,6 +33,13 @@ LISTINGS_DETAILED_RESPONSES = {
 @cache(expire=settings.cache_ttl_seconds)
 async def search_listings_with_details(
     scraper: ScraperDep,
+    raw_url: str | None = Query(
+        None,
+        description=(
+            "Raw URL to scrape. If provided, overrides all other parameters "
+            "except page parameters."
+        ),
+    ),
     query: str | None = Query(None, description="Search term"),
     location: str | None = Query(None, description="Location filter"),
     radius: int | None = Query(None, ge=1, le=100, description="Radius in km"),
@@ -55,6 +62,7 @@ async def search_listings_with_details(
 ) -> ApiResponse[list[DetailedListingItem]]:
     started_at = time.perf_counter()
     combined = await scraper.fetch_listings_with_details(
+        raw_url=raw_url,
         query=query,
         location=location,
         radius=radius,
