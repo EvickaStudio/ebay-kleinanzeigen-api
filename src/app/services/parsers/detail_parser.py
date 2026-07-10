@@ -34,14 +34,14 @@ def parse_price(price_text: str | None) -> dict[str, object]:
 def parse_categories(soup: BeautifulSoup) -> list[str]:
     return [
         tag.get_text(strip=True)
-        for tag in soup.select(".breadcrump-link")
+        for tag in soup.find_all(class_="breadcrump-link")
         if tag.get_text(strip=True)
     ]
 
 
 def parse_images(soup: BeautifulSoup) -> list[str]:
     images: list[str] = []
-    for tag in soup.select("#viewad-image"):
+    for tag in soup.find_all(id="viewad-image"):
         src = tag.get("src")
         if isinstance(src, str):
             images.append(src)
@@ -51,33 +51,40 @@ def parse_images(soup: BeautifulSoup) -> list[str]:
 def parse_seller(soup: BeautifulSoup) -> dict[str, object]:
     seller = {
         "name": _clean_text(
-            soup.select_one(".userprofile-vip, .userprofile-header-user-name")
+            soup.find(class_=["userprofile-vip", "userprofile-header-user-name"])
         ),
         "since": None,
         "type": "private",
         "badges": [],
     }
 
-    for detail in soup.select(".userprofile-vip-details-text"):
+    for detail in soup.find_all(class_="userprofile-vip-details-text"):
         detail_text = detail.get_text(strip=True)
         if "Gewerblicher" in detail_text:
             seller["type"] = "business"
         if detail_text.startswith("Aktiv seit"):
             seller["since"] = detail_text.replace("Aktiv seit", "").strip()
 
-    badges = [
-        badge.get_text(strip=True)
-        for badge in soup.select(".userprofile-vip-badges .userbadge-tag")
-        if badge.get_text(strip=True)
-    ]
-    seller["badges"] = badges
+    badges = soup.find(class_="userprofile-vip-badges")
+    seller["badges"] = (
+        [
+            badge.get_text(strip=True)
+            for badge in badges.find_all(class_="userbadge-tag")
+            if badge.get_text(strip=True)
+        ]
+        if badges
+        else []
+    )
 
     return seller
 
 
 def parse_details(soup: BeautifulSoup) -> dict[str, str]:
     details: dict[str, str] = {}
-    for item in soup.select("#viewad-details .addetailslist--detail"):
+    container = soup.find(id="viewad-details")
+    if container is None:
+        return details
+    for item in container.find_all(class_="addetailslist--detail"):
         parts = list(item.stripped_strings)
         if len(parts) >= 2:
             details[parts[0]] = parts[-1]
@@ -85,7 +92,7 @@ def parse_details(soup: BeautifulSoup) -> dict[str, str]:
 
 
 def parse_location(soup: BeautifulSoup) -> dict[str, str | None]:
-    locality = soup.select_one("#viewad-locality")
+    locality = soup.find(id="viewad-locality")
     location_text = _clean_text(locality.get_text() if locality else None)
     if not location_text:
         return {"zip": "", "city": "", "state": None}
@@ -103,6 +110,7 @@ def parse_location(soup: BeautifulSoup) -> dict[str, str | None]:
 
 
 def parse_extra_info(soup: BeautifulSoup) -> dict[str, str | None]:
-    created_at_element = soup.select_one("#viewad-extra-info span")
+    container = soup.find(id="viewad-extra-info")
+    created_at_element = container.find("span") if container else None
     created_at_text = created_at_element.get_text() if created_at_element else None
     return {"created_at": _clean_text(created_at_text)}
