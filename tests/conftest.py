@@ -9,14 +9,18 @@ from src.app.main import create_app
 
 @pytest.fixture
 def app():
-    """Fresh app instance per test so cache state does not leak."""
+    """Fresh app instance per test."""
     return create_app()
 
 
 @pytest.fixture
 def client(app):
-    """Fresh TestClient per test so lifespan state and cache are reset."""
-    with TestClient(app, raise_server_exceptions=False) as c:
+    """Bypass response caching so each test exercises its outbound mocks."""
+    with TestClient(
+        app,
+        raise_server_exceptions=False,
+        headers={"Cache-Control": "no-cache"},
+    ) as c:
         yield c
 
 

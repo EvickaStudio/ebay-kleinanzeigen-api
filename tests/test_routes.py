@@ -113,6 +113,17 @@ class TestListingsValidation:
 
 
 class TestListingsSuccess:
+    def test_identical_request_hits_cache(self, client, mock_http):
+        route = mock_http.get(url__regex=_SEARCH_RE).mock(
+            return_value=httpx.Response(200, text=LISTING_PAGE_HTML)
+        )
+        headers = {"Cache-Control": ""}
+        first = client.get("/v1/listings?query=cache-test", headers=headers)
+        second = client.get("/v1/listings?query=cache-test", headers=headers)
+        assert first.headers["x-fastapi-cache"] == "MISS"
+        assert second.headers["x-fastapi-cache"] == "HIT"
+        assert route.call_count == 1
+
     def test_returns_200_with_results(self, client, mock_http):
         mock_http.get(url__regex=_SEARCH_RE).mock(
             return_value=httpx.Response(200, text=LISTING_PAGE_HTML)
