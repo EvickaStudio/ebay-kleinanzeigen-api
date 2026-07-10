@@ -24,7 +24,8 @@ def create_shared_client() -> httpx.AsyncClient:
             max_keepalive_connections=settings.http_max_keepalive_connections,
             keepalive_expiry=30.0,
         ),
-        headers={"User-Agent": settings.http_user_agent},
+        # Keep pooling stateless: experiment cookies change the scrapeable markup.
+        headers={"User-Agent": settings.http_user_agent, "Cookie": ""},
     )
 
 
