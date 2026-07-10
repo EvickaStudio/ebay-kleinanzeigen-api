@@ -175,21 +175,21 @@ uv run --group dev python scripts/benchmark.py \
 
 | Endpoint | Parameters | Avg (s) | Min (s) | Max (s) |
 |---|---|---:|---:|---:|
-| `/v1/listings` | `pages=1` | 0.315 | 0.199 | 0.448 |
-| `/v1/listings` | `pages=3` | 0.335 | 0.275 | 0.405 |
-| `/v1/listings` | `pages=5` | 0.629 | 0.539 | 0.716 |
-| `/v1/listings` | `pages=3`, `sort=price` | 0.335 | 0.298 | 0.367 |
-| `/v1/listings` | `pages=3`, `start=3` | 0.388 | 0.299 | 0.436 |
-| `/v1/listings` | `query=acemagic`, `pages=10` | 0.393 | 0.353 | 0.461 |
-| `/v1/listings/{id}` | single listing | 0.342 | 0.326 | 0.368 |
-| `/v1/listings-detailed` | `pages=1`, `concurrency=5` | 2.838 | 2.765 | 2.898 |
-| `/v1/listings-detailed` | `pages=3`, `concurrency=5` | 7.018 | 6.814 | 7.421 |
-| `/v1/listings-detailed` | `pages=5`, `concurrency=5` | 11.370 | 11.112 | 11.704 |
-| `/v1/listings-detailed` | `pages=1`, `concurrency=10` | 1.941 | 1.833 | 2.022 |
-| `/v1/listings-detailed` | `pages=3`, `concurrency=10` | 5.161 | 4.871 | 5.348 |
+| `/v1/listings` | `pages=1` | 0.093 | 0.002 | 0.276 |
+| `/v1/listings` | `pages=3` | 0.130 | 0.002 | 0.386 |
+| `/v1/listings` | `pages=5` | 0.195 | 0.002 | 0.581 |
+| `/v1/listings` | `pages=3`, `sort=price` | 0.130 | 0.002 | 0.386 |
+| `/v1/listings` | `pages=3`, `start=3` | 0.097 | 0.002 | 0.285 |
+| `/v1/listings` | `pages=10` | 0.405 | 0.003 | 1.206 |
+| `/v1/listings/{id}` | single listing | 0.108 | 0.001 | 0.320 |
+| `/v1/listings-detailed` | `pages=1`, `concurrency=5` | 0.809 | 0.003 | 2.422 |
+| `/v1/listings-detailed` | `pages=3`, `concurrency=5` | 2.032 | 0.005 | 6.086 |
+| `/v1/listings-detailed` | `pages=5`, `concurrency=5` | 3.481 | 0.008 | 10.426 |
+| `/v1/listings-detailed` | `pages=1`, `concurrency=10` | 0.753 | 0.003 | 2.252 |
+| `/v1/listings-detailed` | `pages=3`, `concurrency=10` | 1.730 | 0.006 | 5.179 |
+| `/v1/listings-detailed` | `pages=5`, `concurrency=10` | 2.787 | 0.007 | 8.348 |
 
 > `query=pc`, `min_price=10`, `max_price=300` used for all listings benchmarks unless stated otherwise.  
-> `acemagic` benchmark demonstrates early-termination: requesting 10 pages but only ~2 exist.
 
 ![Benchmark chart](assets/benchmarks.png)
 
