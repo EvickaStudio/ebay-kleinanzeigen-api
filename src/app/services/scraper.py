@@ -86,8 +86,7 @@ class KleinanzeigenScraperService:
 
     @staticmethod
     def _normalize_listing_id(listing_id: str) -> str:
-        digits_only = "".join(ch for ch in listing_id if ch.isdigit())
-        return digits_only or listing_id.split("-", 1)[0]
+        return listing_id.split("-", 1)[0]
 
     async def fetch_listing_detail(self, listing_id: str) -> ListingDetail:
         """Fetch and parse the full detail page for a single listing."""
@@ -102,10 +101,10 @@ class KleinanzeigenScraperService:
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
-        raw_price = soup.select_one("#viewad-price")
+        raw_price = soup.find(id="viewad-price")
         price_data = parse_price(raw_price.get_text() if raw_price else None)
 
-        title_element = soup.select_one("#viewad-title")
+        title_element = soup.find(id="viewad-title")
         title = title_element.get_text(strip=True) if title_element else ""
 
         views = await self.fetch_listing_views(listing_id)
@@ -444,7 +443,9 @@ class KleinanzeigenScraperService:
             total_results = self._extract_total_results(soup)
 
             page_summaries: list[ListingSummary] = []
-            for article in soup.select("article.aditem[data-adid]"):
+            for article in soup.find_all(
+                "article", class_="aditem", attrs={"data-adid": True}
+            ):
                 if summary := self._parse_listing_summary(article):
                     page_summaries.append(summary)
 
@@ -570,7 +571,7 @@ class KleinanzeigenScraperService:
         Example text: "1 - 25 von 3.006 Ergebnissen für „mini pc" in Deutschland"
         Returns 3006.
         """
-        breadcrumb = soup.select_one(".breadcrump-summary")
+        breadcrumb = soup.find(class_="breadcrump-summary")
         if not breadcrumb:
             return None
         text = breadcrumb.get_text(strip=True)
@@ -590,11 +591,13 @@ class KleinanzeigenScraperService:
         if not ad_id or not href:
             return None
 
-        title_element = article.select_one("h2 a.ellipsis")
-        price_element = article.select_one(
-            "p.aditem-main--middle--price-shipping--price"
+        title_element = article.find("a", class_="ellipsis")
+        price_element = article.find(
+            "p", class_="aditem-main--middle--price-shipping--price"
         )
-        description_element = article.select_one("p.aditem-main--middle--description")
+        description_element = article.find(
+            "p", class_="aditem-main--middle--description"
+        )
 
         price = parse_price(price_element.get_text() if price_element else None)
 
@@ -614,7 +617,7 @@ class KleinanzeigenScraperService:
         return ListingSummary.model_validate(summary_data)
 
     def _parse_delivery_method(self, soup: BeautifulSoup) -> str | None:
-        shipping_text = soup.select_one(".boxedarticle--details--shipping")
+        shipping_text = soup.find(class_="boxedarticle--details--shipping")
         if shipping_text is None:
             return None
         text = shipping_text.get_text(strip=True)
@@ -623,7 +626,7 @@ class KleinanzeigenScraperService:
         return "shipping" if "Versand" in text else None
 
     def _parse_delivery_cost(self, soup: BeautifulSoup) -> str | None:
-        shipping_text = soup.select_one(".boxedarticle--details--shipping")
+        shipping_text = soup.find(class_="boxedarticle--details--shipping")
         if shipping_text is None:
             return None
         text = shipping_text.get_text(" ", strip=True)
@@ -631,15 +634,18 @@ class KleinanzeigenScraperService:
         return f"{match[1]} €" if match else None
 
     def _extract_description(self, soup: BeautifulSoup) -> str | None:
-        description = soup.select_one("#viewad-description-text")
+        description = soup.find(id="viewad-description-text")
         if not description:
             return None
         cleaned = description.get_text("\n", strip=True)
         return re.sub(r"\n{2,}", "\n", cleaned)
 
     def _extract_features(self, soup: BeautifulSoup) -> list[str]:
+        container = soup.find(id="viewad-configuration")
+        if container is None:
+            return []
         return [
             tag.get_text(strip=True)
-            for tag in soup.select("#viewad-configuration .checktag")
+            for tag in container.find_all(class_="checktag")
             if tag.get_text(strip=True)
         ]
